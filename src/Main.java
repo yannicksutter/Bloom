@@ -1,57 +1,87 @@
+import com.google.common.hash.HashCode;
+import com.google.common.hash.HashFunction;
+import com.google.common.hash.Hashing;
+
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Scanner;
 
 public class Main {
 
-
-    int erwarteteAnzahl;
-    int filtergrösse;
-    int hashfunktionen;
-    static int[] seeds;
+    static int[] bloom;
+    static List<HashFunction> functions = new ArrayList<>();
+    static int m;
 
     public static void main(String[] args) throws IOException {
         double p = Double.parseDouble(args[0]);
 
-        FileReader fr = new FileReader("words.txt");
-        BufferedReader br = new BufferedReader(fr);
 
-        List<String> words = new ArrayList<String>();
-
-        String line;
-        while ((line = br.readLine()) != null) {
-            words.add(line);
-            System.out.println(line);
+        Scanner words = new Scanner(new File("words.txt"));
+        List<String> bloomWords = new ArrayList<>();
+        System.out.println("Die Wörter aus words.txt für den BloomFilter einlesen.");
+        while(words.hasNext()) {
+            String word = words.next();
+            bloomWords.add(word);
         }
-        br.close();
 
-        double m = Math.ceil((words.size() * Math.log(p)) / Math.log(1.0 / (Math.pow(2.0, Math.log(2.0)))));
-        double k = Math.round(Math.log(2.0) * m / words.size());
-        seeds = createSeeds(k);
-        for(String word : words) {
+        int n = bloomWords.size();
+        m = (int) -((n * Math.log(p)) / (Math.log(2) * Math.log(2)));
+
+        //create Hashfunctions
+        System.out.println("Hashfunktionen generieren");
+        double k = Math.round(Math.log(2.0) * m / n);
+        for (int i=0; i<k; i++) {
+            functions.add(Hashing.murmur3_128(i));
+        }
+
+        bloom = new int[m];
+
+        //add words to bloomfilter
+        for(String word : bloomWords) {
             addToBloomFilter(word);
         }
 
+        //test other words with testwords.txt
+        System.out.println("Testen der Wörter einige aus words.txt und ein paar selber geschrieben");
+        Scanner test = new Scanner(new File("testwords.txt"));
 
+        int countFalsePositives = 0;
+        int countWords = 0;
+        while(test.hasNext()) {
+            String next = test.next();
+            if(isInBloomFilter(next)) {
+                countFalsePositives++;
+            }
+            countWords++;
+        }
+
+        System.out.println("Erwartet p=" + p);
+        System.out.println("Gemessen   p=" + MessageFormat.format("{0,number,#.###}", (double)countFalsePositives / (double)countWords));
 
     }
 
     private static void addToBloomFilter(String word) {
-
-    }
-
-    private static boolean isInBloomFilter() {
-        return false;
-    }
-
-
-
-    private static int[] createSeeds(double k) {
-        int[] seeds = new int[(int) k];
-        for(int i = 0; i < k; i++) {
-            seeds[i] = (int) Math.random() * 100000;
+        for(HashFunction hf : functions) {
+            HashCode code = hf.hashString(word, Charset.defaultCharset());
+            int index = Math.abs(code.asInt()) % m;
+            bloom[index] = 1;
         }
+    }
+
+    private static boolean isInBloomFilter(String word) {
+        for(HashFunction hf: functions) {
+            HashCode code = hf.hashString(word, Charset.defaultCharset());
+            int index = Math.abs(code.asInt()) % m;
+            if(bloom[index] == 0) {
+                return false;
+            }
+        }
+        return true;
     }
 }
